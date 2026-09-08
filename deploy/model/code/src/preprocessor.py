@@ -65,6 +65,18 @@ CONTRACTIONS = {
 
 
 class TextPreprocessor(BaseEstimator, TransformerMixin):
+    """
+    Sklearn-compatible text-cleaning transformer.
+
+    NOTE on design: __init__ only stores the two constructor params, unchanged,
+    as sklearn's API contract requires (this is what makes get_params()/
+    set_params()/clone() — and therefore GridSearchCV and MLflow's pyfunc
+    loading — behave correctly). All the actual setup (resolving stopwords,
+    deciding whether lemmatization is really available, etc.) happens in
+    fit(), and the results are stored in attributes ending with "_" per
+    sklearn convention for fitted state.
+    """
+
     def __init__(self, remove_stopwords: bool = True, lemmatize: bool = True):
         self.remove_stopwords = remove_stopwords
         self.lemmatize = lemmatize
@@ -85,6 +97,8 @@ class TextPreprocessor(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         if not hasattr(self, "stop_words_"):
+            # Allows the transformer to be used standalone without an explicit
+            # fit() call first (mirrors the old class's behavior).
             self.fit(X)
 
         texts = self._as_text_iterable(X)
@@ -92,14 +106,17 @@ class TextPreprocessor(BaseEstimator, TransformerMixin):
 
     @staticmethod
     def _as_text_iterable(X):
-        if hasattr(X, "columns"):
+        """Accepts a list/array of strings, a pandas Series, or a single-column
+        pandas DataFrame (the shape MLflow's pyfunc/REST serving typically
+        hands a model), and always returns something iterable of raw strings."""
+        if hasattr(X, "columns"):  # pandas DataFrame
             if X.shape[1] != 1:
                 raise ValueError(
                     "TextPreprocessor expects a single text column when given "
                     f"a DataFrame; got columns: {list(X.columns)}"
                 )
             return X.iloc[:, 0].astype(str).tolist()
-        if hasattr(X, "tolist"):
+        if hasattr(X, "tolist"):  # numpy array / pandas Series
             return [str(t) for t in X.tolist()]
         return [str(t) for t in X]
 

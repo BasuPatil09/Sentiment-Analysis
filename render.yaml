@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: sentiment-analysis
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"

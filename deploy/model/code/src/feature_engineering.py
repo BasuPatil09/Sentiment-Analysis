@@ -5,6 +5,13 @@ import numpy as np
 
 
 class FeatureExtractor(BaseEstimator, TransformerMixin):
+    """
+    Sklearn-compatible vectorizing transformer. __init__ only stores the
+    constructor params (sklearn convention — see TextPreprocessor for why);
+    the actual vectorizer is built fresh in fit()/fit_transform() and stored
+    as `vectorizer_` (trailing underscore = fitted state).
+    """
+
     STRATEGIES = ["tfidf_word", "tfidf_char", "tfidf_combo", "bow"]
 
     def __init__(self, strategy: str = "tfidf_word", max_features: int = 50_000):
