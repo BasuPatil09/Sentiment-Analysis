@@ -10,14 +10,19 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--output", default="deploy/model",
                     help="Where to write the exported model directory.")
+    p.add_argument("--version", default=None,
+                    help="Export a specific registered version number instead of the current champion alias.")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
-    model_uri = f"models:/{REGISTERED_MODEL_NAME}@{CHAMPION_ALIAS}"
+    if args.version:
+        model_uri = f"models:/{REGISTERED_MODEL_NAME}/{args.version}"
+    else:
+        model_uri = f"models:/{REGISTERED_MODEL_NAME}@{CHAMPION_ALIAS}"
 
-    print(f"[Export] Fetching current champion: {model_uri}")
+    print(f"[Export] Fetching: {model_uri}")
 
     shutil.rmtree(args.output, ignore_errors=True)
 
@@ -31,10 +36,7 @@ def main():
         print("[Export] Run main.py at least once first so a champion exists.")
         raise SystemExit(1)
 
-    print(f"[Export] Champion exported to: {dst}")
-    print("[Export] This directory is fully self-contained (model + bundled "
-          "src/ code) — safe to COPY into a Docker image with zero MLflow "
-          "server dependency at runtime.")
+    print(f"[Export] Exported to: {dst}")
 
 
 if __name__ == "__main__":
