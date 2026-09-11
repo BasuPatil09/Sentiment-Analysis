@@ -6,12 +6,10 @@ dependencies:
 - pip:
   - mlflow==3.16.0
   - cloudpickle==3.1.2
-  - matplotlib==3.10.8
   - nltk==3.9.3
   - numpy==2.4.3
   - pandas==3.0.1
   - pyarrow==25.0.1
   - scikit-learn==1.8.0
   - scipy==1.17.1
-  - seaborn==0.13.2
 name: mlflow-env

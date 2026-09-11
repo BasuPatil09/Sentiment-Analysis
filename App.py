@@ -1,7 +1,8 @@
 import os
+import sys
 from flask import Flask, request, jsonify, render_template
 import pandas as pd
-import mlflow.sklearn
+import cloudpickle
 
 app = Flask(__name__)
 
@@ -12,29 +13,48 @@ LABEL_MAP                = {0: "NEGATIVE", 1: "POSITIVE"}
 
 _pipeline         = None
 _legacy_predictor = None
+_model_source     = None
+
+
+def _load_from_local_export(model_dir):
+    code_dir = os.path.join(model_dir, "code")
+    if os.path.isdir(code_dir) and code_dir not in sys.path:
+        sys.path.insert(0, code_dir)
+    with open(os.path.join(model_dir, "model.pkl"), "rb") as f:
+        return cloudpickle.load(f)
+
+
+def _load_from_mlflow_uri(uri):
+    import mlflow.sklearn
+    return mlflow.sklearn.load_model(uri)
 
 
 def _load_model():
-    global _pipeline, _legacy_predictor
+    global _pipeline, _legacy_predictor, _model_source
 
-    candidates = []
     env_uri = os.environ.get("MODEL_URI")
     if env_uri:
-        candidates.append(("MODEL_URI env var", env_uri))
-    candidates.append(("baked-in champion export", BAKED_MODEL_PATH))
-
-    for source, uri in candidates:
         try:
-            _pipeline = mlflow.sklearn.load_model(uri)
-            print(f"[App] Loaded model from {source}: {uri}")
+            _pipeline = _load_from_mlflow_uri(env_uri)
+            _model_source = "mlflow_uri"
+            print(f"[App] Loaded model from MODEL_URI env var: {env_uri}")
             return
         except Exception as e:
-            print(f"[App] Could not load model from {source} ({uri}): {e}")
+            print(f"[App] Could not load model from MODEL_URI ({env_uri}): {e}")
 
-    print("[App] No MLflow model available — falling back to legacy joblib pipeline...")
+    try:
+        _pipeline = _load_from_local_export(BAKED_MODEL_PATH)
+        _model_source = "direct"
+        print(f"[App] Loaded model from baked-in champion export: {BAKED_MODEL_PATH}")
+        return
+    except Exception as e:
+        print(f"[App] Could not load baked-in model export ({BAKED_MODEL_PATH}): {e}")
+
+    print("[App] No model available — falling back to legacy joblib pipeline...")
     try:
         from src.predictor import SentimentPredictor
         _legacy_predictor = SentimentPredictor.load(LEGACY_JOBLIB_PATH)
+        _model_source = "legacy_joblib"
     except Exception as e:
         print(f"[App] Legacy fallback also failed: {e}")
         print("[App] WARNING: no model loaded. /predict will return an error until one is available.")
@@ -67,13 +87,7 @@ def index():
 
 @app.route("/health")
 def health():
-    if _pipeline is not None:
-        source = "mlflow"
-    elif _legacy_predictor is not None:
-        source = "legacy_joblib"
-    else:
-        source = None
-    return jsonify({"status": "ok" if source else "no_model_loaded", "model_source": source})
+    return jsonify({"status": "ok" if _model_source else "no_model_loaded", "model_source": _model_source})
 
 
 @app.route("/predict", methods=["POST"])
