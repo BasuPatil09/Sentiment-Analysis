@@ -19,3 +19,7 @@ mlartifacts/
 mlruns/
 mlartifacts/
 *.db
+.pytest_cache/
+
+# pytest
+.pytest_cache/
