@@ -1,5 +1,9 @@
 import os
 import sys
+import time
+import json
+import logging
+import threading
 from flask import Flask, request, jsonify, render_template
 import pandas as pd
 import cloudpickle
@@ -14,6 +18,42 @@ LABEL_MAP                = {0: "NEGATIVE", 1: "POSITIVE"}
 _pipeline         = None
 _legacy_predictor = None
 _model_source     = None
+
+_metrics_lock = threading.Lock()
+_metrics = {
+    "started_at": time.time(),
+    "total_predictions": 0,
+    "total_errors": 0,
+    "label_counts": {"POSITIVE": 0, "NEGATIVE": 0},
+    "confidence_sum": 0.0,
+}
+
+_log = logging.getLogger("sentiment_app")
+_log.setLevel(logging.INFO)
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+_log.addHandler(_log_handler)
+_log.propagate = False
+
+
+def _log_prediction_event(input_length: int, label: str, confidence, latency_ms: float):
+    _log.info(json.dumps({
+        "event": "prediction",
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "input_length": input_length,
+        "label": label,
+        "confidence": confidence,
+        "latency_ms": round(latency_ms, 1),
+    }))
+
+
+def _record_metrics(label: str, confidence):
+    with _metrics_lock:
+        _metrics["total_predictions"] += 1
+        if label in _metrics["label_counts"]:
+            _metrics["label_counts"][label] += 1
+        if confidence is not None:
+            _metrics["confidence_sum"] += confidence
 
 
 def _load_from_local_export(model_dir):
@@ -96,11 +136,35 @@ def predict():
     text = data.get("text", "").strip()
     if not text:
         return jsonify({"error": "Please enter some text"}), 400
+
+    start = time.time()
     try:
         result = predict_text(text)
     except RuntimeError as e:
+        with _metrics_lock:
+            _metrics["total_errors"] += 1
         return jsonify({"error": str(e)}), 503
+
+    latency_ms = (time.time() - start) * 1000
+    _record_metrics(result["label"], result["confidence"])
+    _log_prediction_event(len(text), result["label"], result["confidence"], latency_ms)
+
     return jsonify(result)
+
+
+@app.route("/metrics")
+def metrics():
+    with _metrics_lock:
+        total = _metrics["total_predictions"]
+        avg_confidence = (_metrics["confidence_sum"] / total) if total else None
+        snapshot = {
+            "uptime_seconds": round(time.time() - _metrics["started_at"], 1),
+            "total_predictions": total,
+            "total_errors": _metrics["total_errors"],
+            "label_counts": dict(_metrics["label_counts"]),
+            "average_confidence": avg_confidence,
+        }
+    return jsonify(snapshot)
 
 
 @app.route("/compare")
