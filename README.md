@@ -1,15 +1,56 @@
-# 🎬 Sentiment Analysis: NLP & MLOps Pipeline
+# Sentiment Analysis: NLP & MLOps Pipeline
 
-A movie review sentiment classifier built with classical NLP and scikit-learn, trained on the IMDB dataset (50,000 reviews), and wrapped in a full MLOps lifecycle: experiment tracking, a model registry with automatic champion promotion, containerization, and a live deployment.
+[![CI](https://github.com/BasuPatil09/Sentiment-Analysis/actions/workflows/ci.yml/badge.svg)](https://github.com/BasuPatil09/Sentiment-Analysis/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Live demo:** [sentiment-analysis-icmn.onrender.com](https://sentiment-analysis-icmn.onrender.com)
-*(free-tier hosting, so the first request after a period of inactivity can take 30-60 seconds while the instance wakes up)*
+A movie review sentiment classifier trained on the IMDB dataset (50,000 reviews), built with classical NLP and scikit-learn, and operated as a complete MLOps system: experiment tracking, an automated model registry, a test suite, CI/CD, containerized deployment, and scheduled monitoring.
 
-The current champion model (SGD Classifier) reaches **91.2% accuracy** and **0.97 ROC-AUC** on the held-out test set. Every training run is tracked, versioned, and compared automatically. See [Experiment Tracking & Model Registry](#experiment-tracking--model-registry) below for how the current best model is decided, not just claimed.
+**Live demo:** https://sentiment-analysis-icmn.onrender.com
+
+Hosted on a free-tier instance. The first request after a period of inactivity may take 30-60 seconds while the instance wakes up.
+
+The current champion model (SGD Classifier) achieves 91.2% accuracy and 0.97 ROC-AUC on the held-out test set. Model selection is automated based on test-set performance; see [Experiment Tracking & Model Registry](#experiment-tracking--model-registry).
 
 ---
 
-## 📸 Screenshots
+## Table of Contents
+
+- [MLOps Pipeline](#mlops-pipeline)
+- [Results](#results)
+- [Project Structure](#project-structure)
+- [Setup & Installation](#setup--installation)
+- [Dataset](#dataset)
+- [Training](#training)
+- [Experiment Tracking & Model Registry](#experiment-tracking--model-registry)
+- [Testing](#testing)
+- [CI/CD](#cicd)
+- [Deployment](#deployment)
+- [Monitoring](#monitoring)
+- [Local Inference](#local-inference-without-the-web-app)
+- [Web Application](#web-application-local-dev)
+- [NLP Pipeline](#nlp-pipeline)
+- [Visualizations Generated](#visualizations-generated)
+- [Tech Stack](#tech-stack)
+
+---
+
+## MLOps Pipeline
+
+| Phase | What it covers |
+|---|---|
+| 1 | Experiment tracking (MLflow) |
+| 2 | Model logging: signed, portable MLflow Models |
+| 3 | Model registry with automatic champion/challenger promotion |
+| 4 | Containerization and deployment (Docker, Render) |
+| 5 | CI/CD: automated tests and a Docker build/health check on every push |
+| 6 | Monitoring: structured logging, live metrics, scheduled health checks |
+
+Each phase is documented in its own section below.
+
+---
+
+## Screenshots
 
 | Model Comparison |
 |---|
@@ -21,7 +62,7 @@ The current champion model (SGD Classifier) reaches **91.2% accuracy** and **0.9
 
 ---
 
-## 🏆 Results
+## Results
 
 | Model | Accuracy | F1 (Macro) | ROC-AUC |
 |---|---|---|---|
@@ -31,77 +72,90 @@ The current champion model (SGD Classifier) reaches **91.2% accuracy** and **0.9
 | Naive Bayes | 88.4% | 0.884 | 0.953 |
 | Random Forest | 85.7% | 0.857 | 0.936 |
 
-This table is a fixed benchmark from the initial model comparison (validation set). It doesn't update automatically; the registry does. Whichever model is currently serving in production is whatever `check_registry.py` reports as `champion`, decided by test-set F1 score each time a model is trained, not by editing this file.
+This table reflects the initial validation-set benchmark and is not updated automatically. The active production model is determined by the registry; run `check_registry.py` to see the current champion and its test-set F1 score.
 
 ---
 
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 sentiment-analysis/
 │
 ├── src/
-│   ├── __init__.py              # Package exports (kept minimal, see note below)
-│   ├── data_loader.py           # CSV loading + train/val/test split
-│   ├── preprocessor.py          # Text cleaning: sklearn-compatible transformer
-│   ├── feature_engineering.py   # TF-IDF / BoW vectorizers: sklearn-compatible transformer
-│   ├── models.py                # Model registry + GridSearchCV tuner
-│   ├── evaluator.py             # Metrics, confusion matrix, ROC, feature plots
-│   ├── predictor.py             # Local joblib-based inference (legacy path)
-│   └── registry.py              # MLflow Model Registry: champion/challenger promotion
+│   ├── __init__.py               # Package exports (minimal by design, see note below)
+│   ├── data_loader.py            # CSV loading + train/val/test split
+│   ├── preprocessor.py           # Text cleaning: sklearn-compatible transformer
+│   ├── feature_engineering.py    # TF-IDF / BoW vectorizers: sklearn-compatible transformer
+│   ├── models.py                 # Model registry + GridSearchCV tuner
+│   ├── evaluator.py              # Metrics, confusion matrix, ROC, feature plots
+│   ├── predictor.py              # Local joblib-based inference (legacy path)
+│   └── registry.py               # MLflow Model Registry: champion/challenger promotion
+│
+├── tests/                        # pytest suite, 31 tests
+│   ├── test_preprocessor.py
+│   ├── test_feature_engineering.py
+│   ├── test_pipeline_integration.py
+│   ├── test_registry.py
+│   └── test_app.py
+│
+├── monitoring/
+│   ├── check_and_log.py          # Uptime + prediction-consistency probe
+│   └── history.jsonl             # Generated by the scheduled workflow, append-only
+│
+├── .github/workflows/
+│   ├── ci.yml                    # Tests + Docker build/health check, every push and PR
+│   └── monitor.yml               # Scheduled health + consistency checks, every 6 hours
 │
 ├── docker/
-│   └── nltk_download.py         # Retry-safe NLTK corpus download for the image build
+│   └── nltk_download.py          # Retry-safe NLTK corpus download for the image build
 │
 ├── templates/
-│   └── index.html               # Flask frontend
+│   └── index.html                # Flask frontend
 │
 ├── deploy/
-│   └── model/                   # Exported champion model, generated, not hand-edited
+│   └── model/                    # Exported champion model, generated, not hand-edited
 │
-├── assets/                      # Screenshots used in this README
-├── data/                        # Dataset goes here (not committed)
-├── outputs/                     # Saved plots + local joblib pipeline (not committed)
+├── assets/                       # Screenshots used in this README
+├── data/                         # Dataset directory (not committed)
+├── outputs/                      # Saved plots + local joblib pipeline (not committed)
 │
-├── main.py                      # Trains, evaluates, logs to MLflow, registers, promotes
-├── predict.py                   # Local inference CLI (joblib-based)
-├── App.py                       # Flask app, serves whatever model was exported to deploy/model/
-├── check_registry.py            # Prints every registered version, its score, and its alias
-├── export_champion.py           # Exports a registered version into deploy/model/ for Docker
-├── convert.py                   # IMDB CSV label converter
+├── main.py                       # Trains, evaluates, logs to MLflow, registers, promotes
+├── predict.py                    # Local inference CLI (joblib-based)
+├── App.py                        # Flask app: serves the model, logs predictions, exposes /metrics
+├── check_registry.py             # Prints every registered version, its score, and its alias
+├── export_champion.py            # Exports a registered version into deploy/model/ for Docker
+├── convert.py                    # IMDB CSV label converter
 ├── Dockerfile
 ├── .dockerignore
-├── render.yaml                  # Render Blueprint
-└── requirements.txt
+├── render.yaml                   # Render Blueprint
+├── requirements.txt
+└── requirements-dev.txt          # Test-only dependencies, excluded from the production image
 ```
 
-`src/__init__.py` intentionally does not eagerly import every submodule. `evaluator.py` and `models.py` pull in matplotlib, seaborn, and scikit-learn's ensemble methods: useful for training, unnecessary weight for a serving container that only needs to unpickle a preprocessor and a vectorizer. `main.py` and `check_registry.py` import what they need directly from their specific modules, so nothing breaks; the serving path just stays lighter.
+`src/__init__.py` does not eagerly import every submodule. `evaluator.py` and `models.py` depend on matplotlib, seaborn, and scikit-learn's ensemble methods, which are required for training but not for serving predictions. `main.py` and `check_registry.py` import their dependencies directly from the relevant submodules, so this has no effect on training. It reduces the memory footprint of the serving container; see [Deployment](#deployment) for the measured impact.
 
 ---
 
-## ⚙️ Setup & Installation
+## Setup & Installation
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/BasuPatil09/Sentiment-Analysis.git
 cd Sentiment-Analysis
 
-# 2. Create a virtual environment
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 source .venv/bin/activate     # Mac/Linux
 
-# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
 ---
 
-## 📦 Dataset
+## Dataset
 
-Download the [IMDB Dataset](https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews) from Kaggle and place it in the `data/` folder.
+Download the [IMDB Dataset](https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews) from Kaggle and place it in `data/`.
 
-Then convert labels:
+Convert labels:
 ```bash
 python convert.py
 ```
@@ -109,16 +163,16 @@ This maps `positive → 1` and `negative → 0` and saves `data/IMDB_clean.csv`.
 
 ---
 
-## 🚀 Training
+## Training
 
 ```bash
-# Train with default Logistic Regression
+# Default (Logistic Regression)
 python main.py --csv data/IMDB_clean.csv --text_col review --label_col sentiment
 
-# Train a specific model
+# Specific model
 python main.py --csv data/IMDB_clean.csv --text_col review --label_col sentiment --model sgd_classifier
 
-# Benchmark ALL models
+# Benchmark all models
 python main.py --csv data/IMDB_clean.csv --text_col review --label_col sentiment --compare
 
 # Hyperparameter tuning
@@ -129,21 +183,21 @@ Available models: `logistic_regression`, `linear_svm`, `naive_bayes`, `random_fo
 
 Available feature strategies: `tfidf_word`, `tfidf_char`, `tfidf_combo`, `bow`
 
-Every run does more than print metrics to the console. See below.
+Each run logs parameters, metrics, and artifacts to MLflow, registers the resulting model, and evaluates it for promotion; see the next section.
 
 ---
 
-## 🔬 Experiment Tracking & Model Registry
+## Experiment Tracking & Model Registry
 
-Each training run logs its parameters, metrics, and plots to MLflow, then goes further: it packages the fitted preprocessor, vectorizer, and classifier into one deployable pipeline, logs that as a versioned MLflow Model, and checks whether it beats the current best.
+Every training run packages the fitted preprocessor, vectorizer, and classifier into a single deployable pipeline, logs it as a versioned MLflow Model, and evaluates whether it should become the new champion.
 
-**View every run, including parameters, metrics, confusion matrices, and ROC curves:**
+**View run history, parameters, metrics, and plots:**
 ```bash
 mlflow ui
 ```
-Open `http://127.0.0.1:5000` and browse the `sentiment-analysis` experiment.
+Open `http://127.0.0.1:5000` and select the `sentiment-analysis` experiment.
 
-**Check which model version is currently serving:**
+**Check the currently deployed model version:**
 ```bash
 python check_registry.py
 ```
@@ -154,19 +208,53 @@ Version  Model                 test_f1_macro     Alias
 2        sgd_classifier        0.9124            champion
 ```
 
-**How promotion works:** every registered version is compared against the current `champion` on held-out test F1. A new version that scores higher takes the `champion` alias; the model it replaced becomes `challenger`. A version that doesn't win is tagged `challenger` and the champion stays put. No manual step decides this. Training a model and letting it lose is the same action as training one and letting it win.
+**Promotion logic:** each registered version is compared against the current `champion` on held-out test F1. A version that scores higher is promoted to `champion`; the version it replaces becomes `challenger`. A version that does not outperform the champion is tagged `challenger` and the champion is retained. Promotion is automatic and requires no manual step.
 
 ---
 
-## 📦 Deployment
+## Testing
 
-The `champion` model gets exported into a self-contained directory and built into a Docker image. No MLflow server needs to be reachable at serving time.
+31 pytest tests covering the components most likely to fail silently:
+
+| File | Coverage |
+|---|---|
+| `test_preprocessor.py` | sklearn API compliance (`get_params`, `clone`), HTML/contraction cleaning, negation-word preservation, input-type consistency (list, Series, DataFrame) |
+| `test_feature_engineering.py` | sklearn API compliance, all vectorization strategies, invalid-strategy handling |
+| `test_pipeline_integration.py` | full raw-text-to-label pipeline, list vs. DataFrame prediction consistency |
+| `test_registry.py` | all three promotion scenarios, run against a real temporary MLflow tracking store |
+| `test_app.py` | every Flask route, `/metrics` accuracy, thread-safety under concurrent load |
 
 ```bash
-# Export whatever's currently champion
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+Assertions check structure and direction rather than exact values. A clearly positive review is expected to return `POSITIVE` with a confidence between 0 and 1, not one fixed number, since the champion model changes as new versions are promoted.
+
+---
+
+## CI/CD
+
+Every push and pull request against `main` triggers [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+1. Install dependencies and run the full test suite
+2. On success, build the Docker image, start the container, and poll `/health` for up to 30 seconds
+
+The health check step confirms the image runs, not just that it builds. Run history is available on the [Actions tab](https://github.com/BasuPatil09/Sentiment-Analysis/actions).
+
+Full-dataset retraining is not performed in CI. This would require either committing a 60-70MB CSV to the repository or configuring Kaggle API credentials as a secret, in addition to a persistence strategy for the MLflow registry so an ephemeral runner has access to registry history. Training remains a local action; CI validates code correctness and build integrity.
+
+---
+
+## Deployment
+
+The current champion is exported into a self-contained directory and built into a Docker image. No MLflow tracking server is required at serving time.
+
+```bash
+# Export the current champion
 python export_champion.py
 
-# Or export a specific version by number
+# Export a specific version
 python export_champion.py --version 3
 
 # Build and run locally
@@ -181,77 +269,97 @@ curl -X POST http://localhost:5000/predict \
   -d '{"text":"This movie was absolutely wonderful."}'
 ```
 
-`App.py` loads the exported model directly. No MLflow import is needed for the default path; only the `MODEL_URI` environment variable override pulls in MLflow, for setups with a reachable tracking server. The container runs on gunicorn with a single worker: a text pipeline that includes NLTK's WordNet corpus uses roughly 300-400 MB per process, which rules out multiple workers on a free-tier instance.
+`App.py` loads the exported model via cloudpickle rather than `mlflow.sklearn.load_model()`. The `MODEL_URI` environment variable can override this to use a live tracking server if one is available. This choice has a measurable effect on memory: with NLTK's WordNet corpus loaded, `mlflow.sklearn.load_model()` used approximately 400MB per process; the direct-load path uses approximately 300MB. Combined with a single gunicorn worker, this keeps the container within Render's free-tier 512MB limit.
 
-Deployed on [Render](https://render.com) via `render.yaml`. Connecting the repository as a Blueprint on Render's dashboard picks up the config automatically.
+Deployed on [Render](https://render.com) via `render.yaml`. Connecting the repository as a Blueprint picks up the configuration automatically; every push to `main` that passes CI triggers a redeploy.
 
 ---
 
-## 🔍 Local Inference (without the web app)
+## Monitoring
+
+Every prediction is logged as a structured JSON line (timestamp, input length, label, confidence, latency) to stdout, captured by Render's dashboard. Input text is not logged, only its length.
+
+**Live metrics:**
+```bash
+curl https://sentiment-analysis-icmn.onrender.com/metrics
+```
+Returns uptime, total predictions, error count, label distribution, and average confidence for the current process. This state is in-memory and resets on restart, which occurs frequently on Render's free tier due to cold starts and redeploys; `/metrics` reflects current-process activity, not cumulative totals.
+
+**Scheduled checks:** [`.github/workflows/monitor.yml`](.github/workflows/monitor.yml) runs every 6 hours (and on demand via `workflow_dispatch`). It checks `/health`, sends three fixed probe reviews through `/predict`, and appends the results to [`monitoring/history.jsonl`](monitoring/history.jsonl), committed back to the repository. Git serves as the persistent log in the absence of a database.
+
+A label change between runs is flagged as a warning rather than a failure, since it may indicate a regression or a legitimate outcome of a new model promotion. Only an unreachable service fails the job.
+
+Production data-drift detection, comparing live traffic against the training distribution, is not implemented. This would require persistent storage for a rolling window of production inputs, which the current hosting tier does not support, and has limited value without real user traffic.
+
+---
+
+## Local Inference (without the web app)
 
 ```bash
-# Single prediction
 python predict.py --model outputs/sentiment_pipeline_logistic_regression.joblib \
                   --text "The film was absolutely brilliant!"
 
-# Batch from file (one review per line)
 python predict.py --model outputs/sentiment_pipeline_logistic_regression.joblib \
                   --file data/new_reviews.txt
 
-# Interactive CLI demo
 python predict.py --model outputs/sentiment_pipeline_logistic_regression.joblib
 ```
 
-This path uses the local joblib pipeline saved by `main.py`, independent of the MLflow registry. Useful for quick checks without touching Docker or the tracking server.
+Uses the local joblib pipeline saved by `main.py`, independent of the MLflow registry.
 
 ---
 
-## 🌐 Web Application (local dev)
+## Web Application (local dev)
 
 ```bash
 python App.py
 ```
 
-Navigate to `http://127.0.0.1:5000`, type a review, and get a prediction with a confidence score alongside a live model comparison chart. This is the same app running at the [live demo link](https://sentiment-analysis-icmn.onrender.com), just without the container.
+Open `http://127.0.0.1:5000`. This is the same application deployed at the live demo link, running without a container.
 
 ---
 
-## 🧠 NLP Pipeline
+## NLP Pipeline
 
 ```
 Raw Text
-  ↓ Lowercase + HTML removal
-  ↓ Contraction expansion (can't → cannot)
-  ↓ Special character removal
-  ↓ Tokenization (NLTK punkt)
-  ↓ Stopword removal (preserving negations: not, never, no)
-  ↓ Lemmatization (WordNet)
-  ↓ TF-IDF Vectorization (word unigrams + bigrams, 50k features)
-  ↓ Classifier (Logistic Regression / SVM / NB / RF / SGD)
-  ↓ Sentiment Label + Confidence Score
+  → Lowercase + HTML removal
+  → Contraction expansion (can't → cannot)
+  → Special character removal
+  → Tokenization (NLTK punkt)
+  → Stopword removal (negations preserved: not, never, no)
+  → Lemmatization (WordNet)
+  → TF-IDF vectorization (word unigrams + bigrams, 50k features)
+  → Classifier (Logistic Regression / SVM / NB / RF / SGD)
+  → Sentiment label + confidence score
 ```
 
-Key design decisions:
-- **Negation words preserved** (`not`, `never`, `no`): dropping these as stopwords would erase exactly the words that flip a sentence's sentiment
-- **Sublinear TF scaling** (`log(1+tf)`): keeps high-frequency terms from dominating the vector
-- **ComplementNB** over MultinomialNB: performs better on the roughly balanced IMDB label split
-- **CalibratedClassifierCV** wraps LinearSVC: LinearSVC has no native `predict_proba`, so this adds calibrated probability output
-- **Preprocessor and vectorizer are real scikit-learn transformers** (`BaseEstimator`, `TransformerMixin`), not standalone helper classes: this is what lets the full pipeline, including text cleaning, get logged, versioned, and deployed as one MLflow Model instead of three separately-tracked pieces
+Design decisions:
+
+| Decision | Rationale |
+|---|---|
+| Negation words preserved (`not`, `never`, `no`) | Removing these as stopwords would discard the words that reverse a sentence's sentiment |
+| Sublinear TF scaling (`log(1+tf)`) | Prevents high-frequency terms from dominating the feature vector |
+| ComplementNB over MultinomialNB | Performs better on the approximately balanced IMDB label distribution |
+| CalibratedClassifierCV wrapping LinearSVC | LinearSVC has no native `predict_proba`; calibration adds probability output |
+| Preprocessor and vectorizer implemented as sklearn transformers (`BaseEstimator`, `TransformerMixin`) | Enables the full pipeline, including text cleaning, to be logged, versioned, tested, and deployed as a single MLflow Model |
 
 ---
 
-## 📊 Visualizations Generated
+## Visualizations Generated
 
-After training, the following plots are saved to `outputs/` and logged as MLflow artifacts:
+Saved to `outputs/` and logged as MLflow artifacts after each training run:
 
-- `confusion_matrix_<model>.png`: predictions vs. ground truth
-- `roc_curve_<model>.png`: ROC curve with AUC annotation
-- `feature_importance_<model>.png`: top 20 positive & negative TF-IDF features
-- `model_comparison.png`: bar chart comparing all models across metrics (`--compare` mode only)
+| File | Contents |
+|---|---|
+| `confusion_matrix_<model>.png` | Predictions vs. ground truth |
+| `roc_curve_<model>.png` | ROC curve with AUC annotation |
+| `feature_importance_<model>.png` | Top 20 positive and negative TF-IDF features |
+| `model_comparison.png` | Cross-model metric comparison (`--compare` mode only) |
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -260,7 +368,9 @@ After training, the following plots are saved to `outputs/` and logged as MLflow
 | NLP | NLTK (tokenization, lemmatization, stopwords) |
 | Feature Extraction | TF-IDF (word + char n-grams), Bag-of-Words |
 | Experiment Tracking | MLflow (tracking, model logging, model registry) |
-| Web Framework | Flask + gunicorn |
+| Testing | pytest |
+| CI/CD | GitHub Actions |
+| Web Framework | Flask, gunicorn |
 | Containerization | Docker |
 | Deployment | Render |
 | Visualization | Matplotlib, Seaborn, Chart.js |
@@ -269,12 +379,12 @@ After training, the following plots are saved to `outputs/` and logged as MLflow
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first.
+Pull requests are welcome. For major changes, open an issue first.
 
 ---
 
-## 📄 License
+## License
 
 [MIT](LICENSE)
